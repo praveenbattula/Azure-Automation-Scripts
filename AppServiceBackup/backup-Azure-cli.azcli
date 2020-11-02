@@ -1,0 +1,45 @@
+#!/bin/bash
+context="appservicedemo2"
+rgName=$context"-rg"
+resourceLocation="WestUS2"
+
+appServicePlan=$context"-plan"
+appServiceName=$context$RANDOM
+
+storageAccountName=$context$RANDOM
+storageContainer=$context"backup"
+backupname="appbackup"
+expirydate=$(date -I -d "$(date) + 1 month")
+
+# 0. Incase if you are running outside of cloud shell then make sure you are logged in to authenticate the requests.
+#az login
+
+# 1. Create a Resource Group 
+az group create --name $rgName --location $resourceLocation
+
+# 2. Create an App Service plan in Standard tier (one backup per day)
+az appservice plan create --name $appServicePlan --resource-group $rgName --location $resourceLocation --sku S1
+
+# 3. Create a web application
+az webapp create --name $appServiceName --plan $appServicePlan --resource-group $rgName
+
+# 4. Create a Storage Account
+az storage account create --name $storageAccountName --resource-group $rgName --location $resourceLocation --sku Standard_LRS
+
+# 5. Create a storage container
+az storage container create --account-name $storageAccountName --name $storageContainer
+
+# 6. Generates an SAS token for the storage container, valid for one month.
+sastoken=$(az storage container generate-sas --account-name $storageAccountName --name $storageContainer --expiry $expirydate --permissions rwdl --output tsv)
+
+# 7. URL for SAS is fixed format. So below will give you the fully qulified url
+sasurl=https://$storageAccountName.blob.core.windows.net/$storageContainer?$sastoken
+
+# 8. Create backup, We are in Standard SKU (one backup per day)
+az webapp config backup create --resource-group $rgName --webapp-name $appServiceName --backup-name $backupname --container-url $sasurl
+
+# 9. List statuses of all backups that are complete or currently executing.
+az webapp config backup list --resource-group $rgName --webapp-name $appServiceName
+
+# 10. Delete resource group (Uncomment and run below line, once all test is completed to avoid billing.)
+#az group delete --name $rgName
